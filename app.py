@@ -1,38 +1,117 @@
 import os
+
 from dotenv import load_dotenv
-from anthropic import AsyncAnthropic
 import chainlit as cl
+from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
+
+from juria.auth import is_dev_mode, get_user_db, verify_password
+from juria.chat import stream_response
+from juria.user_docs import handle_upload
 
 load_dotenv()
 
-client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-MODEL = "claude-sonnet-5"
+# ---------------------------------------------------------------------------
+# Data layer – SQLite persistence for threads, messages, elements
+# ---------------------------------------------------------------------------
+
+@cl.data_layer
+async def get_data_layer():
+    return SQLAlchemyDataLayer(
+        conninfo="sqlite+aiosqlite:///data/juria_app.db",
+    )
+
+# ---------------------------------------------------------------------------
+# Authentication
+# ---------------------------------------------------------------------------
+
+if not is_dev_mode():
+
+    @cl.password_auth_callback
+    async def auth_callback(username: str, password: str):
+        user = get_user_db(username)
+        if user is None:
+            return None
+        if not verify_password(password, user["password_hash"]):
+            return None
+        return cl.User(
+            identifier=user["username"],
+            metadata={"role": "user", "display_name": user["display_name"]},
+        )
+
+# ---------------------------------------------------------------------------
+# Starters
+# ---------------------------------------------------------------------------
+
+@cl.set_starters
+async def set_starters():
+    return [
+        cl.Starter(
+            label="Responsabilite contractuelle",
+            message="Quels articles du Code civil traitent de la responsabilite contractuelle ?",
+            icon="/public/idea.svg",
+        ),
+        cl.Starter(
+            label="Dol et erreur",
+            message="Explique-moi la difference entre dol et erreur en droit des contrats.",
+            icon="/public/idea.svg",
+        ),
+        cl.Starter(
+            label="Prescription penale",
+            message="Quels sont les delais de prescription en matiere penale ?",
+            icon="/public/idea.svg",
+        ),
+    ]
+
+# ---------------------------------------------------------------------------
+# Chat start
+# ---------------------------------------------------------------------------
 
 @cl.on_chat_start
 async def start():
-    # historique de la conversation stocké dans la session Chainlit
     cl.user_session.set("history", [])
-    await cl.Message(content="Salut ! Je suis prêt, pose ta question.").send()
 
+# ---------------------------------------------------------------------------
+# Chat resume (from sidebar history)
+# ---------------------------------------------------------------------------
+
+@cl.on_chat_resume
+async def on_chat_resume(thread):
+    history = []
+    for step in thread.get("steps", []):
+        step_type = step.get("type")
+        output = step.get("output", "")
+        if not output:
+            continue
+        if step_type == "user_message":
+            history.append({"role": "user", "content": output})
+        elif step_type == "assistant_message":
+            history.append({"role": "assistant", "content": output})
+    cl.user_session.set("history", history)
+
+# ---------------------------------------------------------------------------
+# Message handler
+# ---------------------------------------------------------------------------
 
 @cl.on_message
 async def main(message: cl.Message):
+    # Handle file uploads
+    if message.elements:
+        user = cl.user_session.get("user")
+        user_id = user.identifier if user else "anonymous"
+        confirmations = await handle_upload(message.elements, user_id)
+        if confirmations:
+            await cl.Message(content="\n".join(confirmations)).send()
+        # If the message only contains files with no text, stop here
+        if not message.content.strip():
+            return
+
     history = cl.user_session.get("history")
     history.append({"role": "user", "content": message.content})
 
     msg = cl.Message(content="")
-    await msg.send()  # affiche le message vide tout de suite, puis on stream dedans
+    await msg.send()
 
-    full_response = ""
-    async with client.messages.stream(
-        model=MODEL,
-        max_tokens=1024,
-        messages=history,
-    ) as stream:
-        async for text in stream.text_stream:
-            full_response += text
-            await msg.stream_token(text)
+    full_response = await stream_response(history, msg)
 
-    await msg.update()
     history.append({"role": "assistant", "content": full_response})
     cl.user_session.set("history", history)

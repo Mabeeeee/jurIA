@@ -1,0 +1,6 @@
+chainlit>=2.0
+anthropic
+python-dotenv
+aiosqlite
+sqlalchemy[asyncio]
+bcrypt

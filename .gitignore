@@ -1,6 +1,10 @@
 .env
 data/raw/
 data/*.duckdb
+data/*.db
+data/user_docs/
 __pycache__/
 *.pyc
 .venv/
+prompt_history.txt
+.claude/
