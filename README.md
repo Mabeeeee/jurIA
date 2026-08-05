@@ -1,88 +1,171 @@
 # jurIA
 
-Assistant RAG juridique — projet personnel destiné à un proche en études de droit, pour l'aider à retrouver des articles de loi pertinents dans le cadre de ses dissertations.
+Assistant juridique conversationnel specialise en droit francais, concu pour aider un proche en etudes de droit a comprendre des concepts juridiques, retrouver des articles de loi et preparer ses travaux universitaires.
 
-## Objectif
+## Fonctionnalites
 
-À partir d'un corpus juridique structuré (Légifrance), l'application permet d'interroger en langage naturel une base d'articles de loi et de retourner les sources brutes correspondantes — pas un résumé généré, mais les articles eux-mêmes, pour permettre une vérification humaine systématique. Le droit est un domaine sensible aux hallucinations : la fiabilité de la source prime sur la fluidité de la réponse.
+- **Chat juridique en streaming** : reponses generees en temps reel avec citation d'articles de loi et de jurisprudence.
+- **Double backend LLM** : Claude (Anthropic) en production, Ollama (modele local) en developpement — bascule automatique via variable d'environnement.
+- **Historique des conversations** : persistance SQLite des threads et messages, reprise de conversation depuis la barre laterale.
+- **Upload de documents** : envoi de fichiers PDF, TXT ou Markdown qui sont stockes par utilisateur pour une future indexation.
+- **Authentification** : login par mot de passe (bcrypt) en production ; profil developpeur automatique en mode dev.
+- **Starters pre-configures** : questions d'exemple cliquables pour guider l'utilisateur (responsabilite contractuelle, dol/erreur, prescription penale).
 
 ## Stack technique
 
-| Composant | Choix | Pourquoi |
+| Composant | Choix | Detail |
 |---|---|---|
-| Interface chat | [Chainlit](https://chainlit.io) | Persistance native des conversations (historique, reprise de thread), absente de Streamlit |
-| Orchestration RAG | [LlamaIndex](https://www.llamaindex.ai) | Librairie Python open-source et gratuite ; seul coût réel = l'API du LLM |
-| LLM | Claude (Anthropic) | Via `llama-index-llms-anthropic` |
-| Stockage vectoriel | DuckDB + extension VSS | Un seul fichier `.duckdb`, portable, versionnable, sans service tiers — même philosophie que `ragnar` en R |
-| Corpus | Légifrance (API PISTE ou open data) | Périmètre de droit ciblé à définir, pas tout Légifrance |
-| Déploiement | Railway / Render | PaaS simple, coût faible, volume persistant à configurer explicitement |
-| CI/CD | GitHub Actions | Lint + tests sur chaque push/PR, déploiement conditionné à la réussite de la CI |
-
-## Points d'attention
-
-- **Chunking hiérarchique** : le découpage du corpus doit respecter la structure Livre > Titre > Chapitre > Article plutôt qu'un découpage naïf par taille de texte.
-- **Sources brutes affichées** : chaque réponse doit pointer vers l'article de loi original, pas seulement une synthèse.
-- **Base DuckDB non versionnée** : régénérée via `juria/ingestion/build_index.py`, pas commitée dans Git (fichier binaire volumineux et reconstructible).
+| Interface chat | [Chainlit](https://chainlit.io) | UI conversationnelle avec historique, reprise de thread, upload de fichiers |
+| LLM production | [Claude](https://anthropic.com) (claude-sonnet-4-6) | Via le SDK `anthropic` (AsyncAnthropic) |
+| LLM developpement | [Ollama](https://ollama.com) (Mistral par defaut) | Via le SDK `openai` pointant sur l'API locale Ollama |
+| Persistance | SQLite + aiosqlite | Base unique `data/juria_app.db` pour threads, steps, users, documents |
+| Authentification | bcrypt | Hachage des mots de passe, stockage en SQLite |
+| Corpus (a venir) | Legifrance (API PISTE / open data) | Pipeline d'ingestion et indexation RAG prevu |
 
 ## Arborescence
 
 ```
 jurIA/
-├── .env                        # clé API Anthropic, gitignored
-├── .env.example                # template sans les valeurs, versionné
-├── .gitignore
-├── requirements.txt
-├── pyproject.toml              # config ruff/black/pytest
-├── README.md
-├── chainlit.md                 # message d'accueil affiché dans l'UI Chainlit
-├── .chainlit/
-│   └── config.toml             # généré par `chainlit init`, versionné
+├── app.py                          # Point d'entree Chainlit : data layer, auth, starters, handlers
 │
-├── app.py                      # point d'entrée Chainlit (@cl.on_chat_start, @cl.on_message)
+├── juria/                          # Package metier
+│   ├── chat.py                     # Selection du backend LLM et streaming des reponses
+│   ├── prompts.py                  # System prompt du personnage jurIA
+│   ├── auth.py                     # Authentification : bcrypt, gestion users SQLite, mode dev
+│   ├── user_docs.py                # Upload et stockage de documents utilisateur
+│   ├── config.py                   # (reserve) lecture des env vars, constantes
+│   ├── ingestion/                  # (a venir) pipeline d'ingestion Legifrance
+│   │   ├── legifrance_client.py    # Appels API PISTE (OAuth2 + requetes)
+│   │   ├── chunking.py            # Decoupage hierarchique des textes de loi
+│   │   └── build_index.py         # Script d'indexation (hors runtime Chainlit)
+│   └── rag/                        # (a venir) retrieval-augmented generation
+│       ├── vector_store.py         # Store vectoriel
+│       ├── query_engine.py         # Retriever + query engine
+│       └── callbacks.py            # Callbacks d'integration Chainlit
 │
-├── juria/                      # package métier — logique testable hors Chainlit
-│   ├── __init__.py
-│   ├── config.py                # lecture des env vars, constantes (modèle, chemins, top_k...)
-│   ├── ingestion/
-│   │   ├── __init__.py
-│   │   ├── legifrance_client.py # appels API PISTE (OAuth2 + requêtes)
-│   │   ├── chunking.py           # découpage hiérarchique Livre > Titre > Chapitre > Article
-│   │   └── build_index.py        # script d'indexation, lancé à part (pas au runtime Chainlit)
-│   └── rag/
-│       ├── __init__.py
-│       ├── vector_store.py       # setup DuckDBVectorStore + extension VSS
-│       ├── query_engine.py       # retriever + query engine LlamaIndex
-│       └── callbacks.py          # LlamaIndexCallbackHandler pour l'intégration Chainlit
+├── scripts/
+│   └── create_user.py              # CLI pour creer un compte utilisateur
 │
 ├── data/
-│   ├── raw/                     # corpus brut téléchargé (gitignored)
-│   └── legal_index.duckdb       # base vectorielle, régénérée, non versionnée
+│   ├── juria_app.db                # Base SQLite (threads, steps, users, documents)
+│   ├── raw/                        # Corpus brut telecharge (gitignored)
+│   └── user_docs/                  # Documents uploades par utilisateur
 │
 ├── tests/
-│   ├── __init__.py
 │   ├── test_chunking.py
 │   └── test_query_engine.py
 │
-└── .github/
-    └── workflows/
-        ├── ci.yml                # lint + tests sur push/PR
-        └── deploy.yml            # déploiement conditionné à la réussite de ci.yml
+├── .chainlit/
+│   └── config.toml                 # Configuration Chainlit (UI, upload, session)
+├── .env.example                    # Template des variables d'environnement
+├── requirements.txt                # Dependances Python
+└── chainlit.md                     # Message d'accueil affiche dans l'UI
 ```
 
 ## Installation
 
 ```bash
-pip install chainlit llama-index llama-index-llms-anthropic \
-    llama-index-vector-stores-duckdb duckdb python-dotenv \
-    llama-index-embeddings-huggingface requests
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+# .venv\Scripts\activate   # Windows
+
+pip install -r requirements.txt
 ```
 
-## Lancement (mode dev)
+### Dependances
+
+```
+chainlit>=2.0
+anthropic
+openai
+python-dotenv
+aiosqlite
+sqlalchemy[asyncio]
+bcrypt
+```
+
+## Configuration
+
+Copier `.env.example` en `.env` et renseigner les valeurs :
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Description | Requis |
+|---|---|---|
+| `JURIA_ENV` | `dev` (Ollama local) ou `prod` (Claude API) | Non (defaut : `dev`) |
+| `ANTHROPIC_API_KEY` | Cle API Anthropic | Oui en prod |
+| `CHAINLIT_AUTH_SECRET` | Secret pour les sessions Chainlit | Oui en prod |
+| `OLLAMA_MODEL` | Modele Ollama a utiliser | Non (defaut : `mistral`) |
+| `OLLAMA_BASE_URL` | URL de l'API Ollama | Non (defaut : `http://localhost:11434/v1`) |
+
+## Lancement
+
+### Mode developpement (Ollama)
+
+Prerequis : [Ollama](https://ollama.com) installe et lance avec un modele disponible (`ollama pull mistral`).
 
 ```bash
 chainlit run app.py -w
 ```
 
-## Statut
+L'application demarre sur `http://localhost:8000` avec un profil developpeur automatique (pas de login requis).
 
-Premiers pas en cours avec Chainlit seul (chat basique via l'API Anthropic, sans RAG). Le pipeline d'ingestion Légifrance et l'indexation DuckDB restent à construire.
+### Mode production (Claude)
+
+```bash
+JURIA_ENV=prod chainlit run app.py
+```
+
+Un ecran de login s'affiche. Creer un utilisateur au prealable :
+
+```bash
+python scripts/create_user.py --username alice --password motdepasse --display-name "Alice D."
+```
+
+## Architecture
+
+### Chat (`juria/chat.py`)
+
+Le module selectionne le backend LLM selon `JURIA_ENV` :
+- **Dev** : `AsyncOpenAI` pointe sur Ollama (`http://localhost:11434/v1`), modele configurable.
+- **Prod** : `AsyncAnthropic` avec Claude claude-sonnet-4-6.
+
+Les reponses sont streamees token par token vers l'interface Chainlit.
+
+### Authentification (`juria/auth.py`)
+
+- **Mode dev** (`JURIA_ENV=dev`) : un `header_auth_callback` retourne automatiquement un utilisateur `dev`, sans ecran de login. Les conversations sont persistees et visibles dans l'historique.
+- **Mode prod** : `password_auth_callback` avec verification bcrypt contre la table `users` en SQLite.
+
+### Persistance (`app.py`)
+
+Le `SQLAlchemyDataLayer` de Chainlit est configure avec SQLite (`data/juria_app.db`). Les tables (`users`, `threads`, `steps`, `elements`, `feedbacks`) sont creees automatiquement au demarrage si elles n'existent pas.
+
+### Upload de documents (`juria/user_docs.py`)
+
+Les fichiers PDF, TXT et Markdown envoyes dans le chat sont :
+1. Copies dans `data/user_docs/<user_id>/`
+2. Enregistres dans la table `user_documents` (metadonnees)
+
+L'indexation pour la recherche RAG n'est pas encore implementee.
+
+### System prompt (`juria/prompts.py`)
+
+jurIA se presente comme un assistant juridique pedagogique : il cite les articles de loi, signale ses incertitudes, et rappelle qu'il ne remplace pas un avocat.
+
+## Statut du projet
+
+- [x] Interface conversationnelle Chainlit
+- [x] Streaming des reponses (Claude + Ollama)
+- [x] Authentification par mot de passe (prod) / auto-login (dev)
+- [x] Persistance de l'historique des conversations (SQLite)
+- [x] Reprise de conversation depuis la sidebar
+- [x] Upload et stockage de documents utilisateur
+- [x] Starters pre-configures
+- [ ] Pipeline d'ingestion Legifrance (API PISTE)
+- [ ] Chunking hierarchique des textes de loi
+- [ ] Indexation vectorielle et recherche RAG
+- [ ] Deploiement (Railway / Render)
+- [ ] CI/CD (GitHub Actions)
