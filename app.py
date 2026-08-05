@@ -59,7 +59,9 @@ def _init_db():
             "defaultOpen"     BOOLEAN,
             "autoCollapse"    BOOLEAN,
             "metadata"        TEXT DEFAULT '{}',
-            "generation"      TEXT DEFAULT '{}'
+            "generation"      TEXT DEFAULT '{}',
+            "tags"            TEXT,
+            "language"        TEXT
         );
 
         CREATE TABLE IF NOT EXISTS elements (
@@ -75,7 +77,8 @@ def _init_db():
             "language"  TEXT,
             "page"      TEXT,
             "forId"     TEXT,
-            "mime"      TEXT
+            "mime"      TEXT,
+            "props"     TEXT
         );
 
         CREATE TABLE IF NOT EXISTS feedbacks (
@@ -86,6 +89,17 @@ def _init_db():
             "comment"  TEXT
         );
     """)
+    # Add columns that may be missing from an older schema
+    for stmt in [
+        'ALTER TABLE steps ADD COLUMN "tags" TEXT',
+        'ALTER TABLE steps ADD COLUMN "language" TEXT',
+        'ALTER TABLE elements ADD COLUMN "props" TEXT',
+    ]:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError:
+            pass  # column already exists
+    conn.commit()
     conn.close()
 
 
@@ -102,7 +116,18 @@ def get_data_layer():
 # Authentication
 # ---------------------------------------------------------------------------
 
-if not is_dev_mode():
+if is_dev_mode():
+
+    @cl.header_auth_callback
+    async def dev_auth_callback(headers: dict) -> cl.User:
+        """In dev mode, automatically log in as a fake user so that thread
+        history is persisted and visible in the sidebar."""
+        return cl.User(
+            identifier="dev",
+            metadata={"role": "dev", "display_name": "Developpeur"},
+        )
+
+else:
 
     @cl.password_auth_callback
     async def auth_callback(username: str, password: str):
