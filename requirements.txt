@@ -1,5 +1,6 @@
 chainlit>=2.0
 anthropic
+openai
 python-dotenv
 aiosqlite
 sqlalchemy[asyncio]

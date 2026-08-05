@@ -1,4 +1,5 @@
 import os
+import sqlite3
 
 from dotenv import load_dotenv
 import chainlit as cl
@@ -14,10 +15,87 @@ load_dotenv()
 # Data layer – SQLite persistence for threads, messages, elements
 # ---------------------------------------------------------------------------
 
+_DB_PATH = "data/juria_app.db"
+
+
+def _init_db():
+    """Create the tables expected by Chainlit's SQLAlchemyDataLayer if they
+    don't exist yet."""
+    os.makedirs(os.path.dirname(_DB_PATH), exist_ok=True)
+    conn = sqlite3.connect(_DB_PATH)
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS users (
+            "id"         TEXT PRIMARY KEY,
+            "identifier" TEXT UNIQUE,
+            "createdAt"  TEXT,
+            "metadata"   TEXT DEFAULT '{}'
+        );
+
+        CREATE TABLE IF NOT EXISTS threads (
+            "id"         TEXT PRIMARY KEY,
+            "createdAt"  TEXT,
+            "name"       TEXT,
+            "userId"     TEXT,
+            "userIdentifier" TEXT,
+            "tags"       TEXT,
+            "metadata"   TEXT DEFAULT '{}'
+        );
+
+        CREATE TABLE IF NOT EXISTS steps (
+            "id"              TEXT PRIMARY KEY,
+            "threadId"        TEXT,
+            "parentId"        TEXT,
+            "name"            TEXT,
+            "type"            TEXT,
+            "streaming"       BOOLEAN,
+            "waitForAnswer"   BOOLEAN,
+            "isError"         BOOLEAN,
+            "input"           TEXT,
+            "output"          TEXT,
+            "createdAt"       TEXT,
+            "start"           TEXT,
+            "end"             TEXT,
+            "showInput"       TEXT,
+            "defaultOpen"     BOOLEAN,
+            "autoCollapse"    BOOLEAN,
+            "metadata"        TEXT DEFAULT '{}',
+            "generation"      TEXT DEFAULT '{}'
+        );
+
+        CREATE TABLE IF NOT EXISTS elements (
+            "id"        TEXT PRIMARY KEY,
+            "threadId"  TEXT,
+            "type"      TEXT,
+            "chainlitKey" TEXT,
+            "url"       TEXT,
+            "objectKey" TEXT,
+            "name"      TEXT,
+            "display"   TEXT,
+            "size"      TEXT,
+            "language"  TEXT,
+            "page"      TEXT,
+            "forId"     TEXT,
+            "mime"      TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS feedbacks (
+            "id"       TEXT PRIMARY KEY,
+            "forId"    TEXT,
+            "threadId" TEXT,
+            "value"    INTEGER,
+            "comment"  TEXT
+        );
+    """)
+    conn.close()
+
+
+_init_db()
+
+
 @cl.data_layer
 def get_data_layer():
     return SQLAlchemyDataLayer(
-        conninfo="sqlite+aiosqlite:///data/juria_app.db",
+        conninfo=f"sqlite+aiosqlite:///{_DB_PATH}",
     )
 
 # ---------------------------------------------------------------------------
