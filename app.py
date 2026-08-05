@@ -15,7 +15,7 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 
 @cl.data_layer
-async def get_data_layer():
+def get_data_layer():
     return SQLAlchemyDataLayer(
         conninfo="sqlite+aiosqlite:///data/juria_app.db",
     )

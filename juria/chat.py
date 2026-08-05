@@ -6,7 +6,7 @@ import chainlit as cl
 from juria.prompts import SYSTEM_PROMPT
 
 client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-sonnet-4-6"
 
 
 async def stream_response(history: list[dict], msg: cl.Message) -> str:
