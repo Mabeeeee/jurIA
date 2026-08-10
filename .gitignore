@@ -3,8 +3,9 @@ data/raw/
 data/*.duckdb
 data/*.db
 data/user_docs/
+data/vectorstore/
 __pycache__/
 *.pyc
 .venv/
-prompt_history.txt
+prompt_history_*
 .claude/
