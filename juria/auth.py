@@ -12,6 +12,13 @@ def is_dev_mode() -> bool:
     return os.getenv("JURIA_ENV", "dev").lower() == "dev"
 
 
+def is_petite_config() -> bool:
+    """Machine peu puissante : meme en dev, bascule vers l'API Claude (Haiku) plutot
+    que Ollama si ANTHROPIC_API_KEY est disponible ; sinon repli sur un modele
+    Ollama plus leger que celui par defaut."""
+    return os.getenv("JURIA_PETITE_CONFIG", "false").lower() == "true"
+
+
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 

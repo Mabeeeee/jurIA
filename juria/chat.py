@@ -7,22 +7,37 @@ from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 import chainlit as cl
 
-from juria.auth import is_dev_mode
+from juria.auth import is_dev_mode, is_petite_config
 from juria.prompts import SYSTEM_PROMPT, TOOL_RECHERCHE, TOOL_RECHERCHE_OPENAI
 
 # ---------------------------------------------------------------------------
 # Client & model selection based on environment
 # ---------------------------------------------------------------------------
 
-if is_dev_mode():
+# Modele leger utilise en repli quand JURIA_PETITE_CONFIG=true, qu'aucun
+# OLLAMA_MODEL explicite n'est fourni, et qu'aucune ANTHROPIC_API_KEY n'est
+# disponible : garde un tool calling fiable tout en restant raisonnable en
+# RAM/CPU (~2 Go), contrairement a mistral (7B). donc on met : llama3.2:3b
+OLLAMA_MODEL_PETITE_CONFIG = "llama3.2:3b"
+
+# En petite config, on prefere l'API Claude (Haiku, rapide/peu cher) a un
+# modele Ollama local qui reste trop lourd/lent pour la machine. On ne bascule
+# ainsi que si une cle API est effectivement disponible ; sinon on retombe sur
+# le modele Ollama allege ci-dessus.
+_use_anthropic = (not is_dev_mode()) or (
+    is_petite_config() and bool(os.getenv("ANTHROPIC_API_KEY"))
+)
+
+if _use_anthropic:
+    _anthropic_client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    _anthropic_model = "claude-haiku-4-5-20251001" if is_dev_mode() else "claude-sonnet-4-6" #
+else:
     _ollama_client = AsyncOpenAI(
         base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
         api_key="ollama",
     )
-    _ollama_model = os.getenv("OLLAMA_MODEL", "mistral")
-else:
-    _anthropic_client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-    _anthropic_model = "claude-sonnet-4-6"
+    _default_ollama_model = OLLAMA_MODEL_PETITE_CONFIG if is_petite_config() else "mistral"
+    _ollama_model = os.getenv("OLLAMA_MODEL", _default_ollama_model)
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +185,6 @@ async def _stream_ollama(history: list[dict], msg: cl.Message) -> str:
 
 async def stream_response(history: list[dict], msg: cl.Message) -> str:
     """Call the LLM with streaming, updating the Chainlit message in real time."""
-    if is_dev_mode():
-        return await _stream_ollama(history, msg)
-    return await _stream_anthropic(history, msg)
+    if _use_anthropic:
+        return await _stream_anthropic(history, msg)
+    return await _stream_ollama(history, msg)
