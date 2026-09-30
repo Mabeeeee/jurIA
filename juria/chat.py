@@ -110,6 +110,11 @@ async def _executer_outil(nom: str, arguments: dict, parent_msg: cl.Message) -> 
             client = get_legifrance_client()
             article = await client.get_article(article_id)
 
+            # Erreur API (500, timeout...)
+            if article.get("erreur"):
+                step.output = f"Erreur API : {article['erreur']}"
+                return f"Erreur lors de la recuperation de l'article {article_id} : {article['erreur']}"
+
             texte = article.get("texte", "")
             etat = article.get("etat", "")
             num = article.get("num", "")

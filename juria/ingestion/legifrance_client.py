@@ -139,15 +139,20 @@ class LegifranceClient:
         UN_DES_MOTS si aucun resultat.
 
         Retourne liste de dicts {id, code, num, extrait}.
+        En cas d'erreur API (500, timeout...), retourne une liste vide.
         """
         if not self._client_id or not self._client_secret:
             logger.warning("Credentials Legifrance non configurees.")
             return []
 
         for type_recherche in ("TOUS_LES_MOTS_DANS_UN_CHAMP", "UN_DES_MOTS"):
-            resultats = await self._search_with_type(
-                mots_cles, type_recherche, nom_code
-            )
+            try:
+                resultats = await self._search_with_type(
+                    mots_cles, type_recherche, nom_code
+                )
+            except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+                logger.warning("Legifrance search %s echoue : %s", type_recherche, exc)
+                return []
             if resultats:
                 return resultats
 
@@ -222,12 +227,17 @@ class LegifranceClient:
         """Recupere le texte integral d'un article.
 
         Retourne {texte, etat, num, url}.
+        En cas d'erreur API, retourne des champs vides + erreur.
         """
         if not self._client_id or not self._client_secret:
             logger.warning("Credentials Legifrance non configurees.")
             return {"texte": "", "etat": "", "num": "", "url": ""}
 
-        data = await self._api_post("/consult/getArticle", {"id": article_id})
+        try:
+            data = await self._api_post("/consult/getArticle", {"id": article_id})
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            logger.warning("Legifrance getArticle echoue pour %s : %s", article_id, exc)
+            return {"texte": "", "etat": "", "num": "", "url": "", "erreur": str(exc)}
 
         article = data.get("article", data)
         texte_html = article.get("texte", article.get("texteHtml", ""))
