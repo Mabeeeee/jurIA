@@ -150,3 +150,38 @@ Etudiant: "Quel est le delai de restitution du depot de garantie ?"
 4. Meme question une 2e fois → servie par la base locale.
 5. Steps Chainlit visibles pour chaque outil.
 6. Article avec `date_verification` > 180j → marqueur `[A_REVERIFIER]` dans le contexte.
+
+---
+
+## Tests effectues (2026-10-01 — sandbox PISTE)
+
+### Endpoint `/search` — KO (sandbox instable)
+
+L'endpoint `/search` de la sandbox PISTE renvoie systématiquement **500 Internal Server Error**. Le `/ping` aussi. C'est un probleme cote DILA, pas cote jurIA. Le code gere cette erreur proprement :
+- `httpx.HTTPStatusError` est attrape dans `search()`
+- Un warning est logue (`juria.ingestion.legifrance_client`)
+- Le LLM recoit "Aucun article trouve" et continue sa reponse sans crash
+
+Le LLM respecte bien la strategie du prompt (3 tentatives max avec mots-cles differents avant d'abandonner).
+
+### Endpoint `/consult/getArticle` — OK
+
+Test avec l'article 1240 du Code civil (`LEGIARTI000032041571`) :
+
+| Etape | Resultat |
+|-------|----------|
+| `getArticle` | Texte integral recupere, etat `VIGUEUR`, num `1240` |
+| `synchroniser_article()` 1er appel | Statut `"ajoute"` — embedding calcule, upsert ChromaDB |
+| Verification ChromaDB | `source_type: legifrance`, `date_verification: 2026-10-01`, `legi_id` present |
+| `synchroniser_article()` 2e appel | Statut `"verifie"` — texte identique, pas de recalcul inutile |
+
+Le pipeline `getArticle` → sync ChromaDB → re-verification est **fonctionnel**.
+
+### Pour tester le pipeline complet
+
+Quand `/search` sera retabli (passage en prod PISTE ou retablissement de la sandbox), le pipeline complet fonctionnera sans changement de code. Il suffira de mettre a jour les URLs dans `.env` si passage en prod :
+
+```
+PISTE_OAUTH_URL=https://oauth.piste.gouv.fr/api/oauth/token
+PISTE_API_BASE=https://api.piste.gouv.fr/dila/legifrance/lf-engine-app
+```
