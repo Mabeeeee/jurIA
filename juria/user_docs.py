@@ -1,8 +1,10 @@
+import hashlib
 import os
 import shutil
 import sqlite3
 from datetime import datetime
 
+import chainlit as cl
 from chainlit.element import Element
 
 DB_PATH = os.path.join("data", "juria_app.db")
@@ -76,9 +78,77 @@ async def handle_upload(elements: list[Element], user_id: str) -> list[str]:
         conn.commit()
         conn.close()
 
-        confirmations.append(
-            f"**{el.name}** enregistre. "
-            f"L'indexation pour la recherche sera disponible prochainement."
-        )
+        # Indexation automatique des PDF
+        if mime == "application/pdf":
+            confirmations.append(await _indexer_pdf(dest, el.name, user_id))
+        else:
+            confirmations.append(
+                f"**{el.name}** enregistre (stockage seul, pas d'indexation pour ce format)."
+            )
 
     return confirmations
+
+
+def _generer_id(source: str, index: int) -> str:
+    """Genere un ID deterministe pour un chunk."""
+    h = hashlib.md5(f"{source}:{index}".encode()).hexdigest()[:12]
+    return f"{source}_{index}_{h}"
+
+
+async def _indexer_pdf(chemin_pdf: str, filename: str, user_id: str) -> str:
+    """Chunke, encode et indexe un PDF dans la collection ChromaDB de l'utilisateur."""
+    from juria.ingestion.chunking import chunker_document
+    from juria.config import get_embedding_model
+    from juria.rag.vector_store import get_user_vector_store
+
+    progress_msg = cl.Message(content=f"**{filename}** : Indexation en cours...")
+    await progress_msg.send()
+
+    try:
+        # 1. Chunking
+        chunks = chunker_document(chemin_pdf, source=filename)
+        if not chunks:
+            await progress_msg.update(
+                content=f"**{filename}** enregistre, mais aucun texte extractible pour l'indexation."
+            )
+            return f"**{filename}** enregistre (PDF sans texte extractible)."
+
+        # 2. Encodage
+        modele = get_embedding_model()
+        textes = [c.texte for c in chunks]
+        embeddings = modele.encode(textes, show_progress_bar=False, batch_size=32)
+        embeddings = [e.tolist() for e in embeddings]
+
+        # 3. Insertion dans ChromaDB
+        store = get_user_vector_store(user_id)
+
+        # Supprimer les anciens chunks du meme fichier (idempotence)
+        try:
+            store.supprimer_par_source(filename)
+        except Exception:
+            pass
+
+        ids = [_generer_id(filename, i) for i in range(len(chunks))]
+        metadatas = [c.metadata for c in chunks]
+
+        batch_size = 500
+        for i in range(0, len(ids), batch_size):
+            store.ajouter(
+                ids=ids[i:i + batch_size],
+                embeddings=embeddings[i:i + batch_size],
+                documents=textes[i:i + batch_size],
+                metadatas=metadatas[i:i + batch_size],
+            )
+
+        confirmation = (
+            f"**{filename}** enregistre et indexe "
+            f"({len(chunks)} passages extraits). "
+            f"Tu peux maintenant me poser des questions sur ce document."
+        )
+        await progress_msg.update(content=confirmation)
+        return confirmation
+
+    except Exception as e:
+        err = f"**{filename}** enregistre, mais erreur lors de l'indexation : {e}"
+        await progress_msg.update(content=err)
+        return err

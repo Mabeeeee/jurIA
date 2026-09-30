@@ -19,6 +19,7 @@ EMBEDDING_DIMENSIONS = 1024
 # ---------------------------------------------------------------------------
 DEFAULT_TOP_K = 5
 SCORE_THRESHOLD = 0.3  # distance cosinus max (plus petit = plus similaire)
+FRAICHEUR_JOURS = 180  # jours avant qu'un article Legifrance soit marque A_REVERIFIER
 
 # ---------------------------------------------------------------------------
 # Chunking

@@ -5,9 +5,10 @@ Assistant juridique conversationnel specialise en droit francais, concu pour aid
 ## Fonctionnalites
 
 - **Chat juridique en streaming** : reponses generees en temps reel avec citation d'articles de loi et de jurisprudence.
-- **Double backend LLM** : Claude (Anthropic) en production, Ollama (modele local) en developpement — bascule automatique via variable d'environnement.
+- **RAG (Retrieval-Augmented Generation)** : recherche automatique dans une base documentaire vectorielle (ChromaDB) avant de repondre, avec affichage des sources consultees.
+- **Tool calling** : le LLM decide quand interroger la base documentaire via des outils declares (format Anthropic et OpenAI). Les etapes de recherche apparaissent comme encarts collapsables rattaches a la reponse.
+- **Double backend LLM** : Claude (Anthropic) en production ou petite config, Ollama (modele local) en developpement — bascule automatique via variable d'environnement.
 - **Historique des conversations** : persistance SQLite des threads et messages, reprise de conversation depuis la barre laterale.
-- **Upload de documents** : envoi de fichiers PDF, TXT ou Markdown qui sont stockes par utilisateur pour une future indexation.
 - **Authentification** : login par mot de passe (bcrypt) en production ; profil developpeur automatique en mode dev.
 - **Starters pre-configures** : questions d'exemple cliquables pour guider l'utilisateur (responsabilite contractuelle, dol/erreur, prescription penale).
 
@@ -15,12 +16,13 @@ Assistant juridique conversationnel specialise en droit francais, concu pour aid
 
 | Composant | Choix | Detail |
 |---|---|---|
-| Interface chat | [Chainlit](https://chainlit.io) | UI conversationnelle avec historique, reprise de thread, upload de fichiers |
+| Interface chat | [Chainlit](https://chainlit.io) | UI conversationnelle avec historique, reprise de thread |
 | LLM production | [Claude](https://anthropic.com) (claude-sonnet-4-6) | Via le SDK `anthropic` (AsyncAnthropic) |
 | LLM developpement | [Ollama](https://ollama.com) (Mistral par defaut) | Via le SDK `openai` pointant sur l'API locale Ollama |
-| Persistance | SQLite + aiosqlite | Base unique `data/juria_app.db` pour threads, steps, users, documents |
+| Embeddings | [Solon](https://huggingface.co/OrdalieTech/Solon-embeddings-large-0.1) | Modele francais 1024 dimensions |
+| Base vectorielle | [ChromaDB](https://www.trychroma.com/) | Stockage et recherche par similarite cosinus |
+| Persistance | SQLite + aiosqlite | Base `data/juria_app.db` pour threads, steps, users |
 | Authentification | bcrypt | Hachage des mots de passe, stockage en SQLite |
-| Corpus (a venir) | Legifrance (API PISTE / open data) | Pipeline d'ingestion et indexation RAG prevu |
 
 ## Arborescence
 
@@ -29,25 +31,26 @@ jurIA/
 ├── app.py                          # Point d'entree Chainlit : data layer, auth, starters, handlers
 │
 ├── juria/                          # Package metier
-│   ├── chat.py                     # Selection du backend LLM et streaming des reponses
-│   ├── prompts.py                  # System prompt du personnage jurIA
+│   ├── chat.py                     # Selection du backend LLM, streaming, tool calling
+│   ├── prompts.py                  # System prompt et definitions d'outils (Anthropic + OpenAI)
 │   ├── auth.py                     # Authentification : bcrypt, gestion users SQLite, mode dev
 │   ├── user_docs.py                # Upload et stockage de documents utilisateur
-│   ├── config.py                   # (reserve) lecture des env vars, constantes
-│   ├── ingestion/                  # (a venir) pipeline d'ingestion Legifrance
-│   │   ├── legifrance_client.py    # Appels API PISTE (OAuth2 + requetes)
-│   │   ├── chunking.py            # Decoupage hierarchique des textes de loi
-│   │   └── build_index.py         # Script d'indexation (hors runtime Chainlit)
-│   └── rag/                        # (a venir) retrieval-augmented generation
-│       ├── vector_store.py         # Store vectoriel
-│       ├── query_engine.py         # Retriever + query engine
-│       └── callbacks.py            # Callbacks d'integration Chainlit
+│   ├── config.py                   # Embeddings, parametres RAG (top_k, seuil, chunking)
+│   ├── ingestion/                  # Pipeline d'ingestion de corpus
+│   │   ├── legifrance_client.py    # (a venir) Appels API PISTE (OAuth2 + requetes)
+│   │   ├── chunking.py             # Decoupage hierarchique des textes de loi
+│   │   └── build_index.py          # Script d'indexation dans ChromaDB
+│   └── rag/                        # Retrieval-augmented generation
+│       ├── vector_store.py         # Interface ChromaDB (collections principale + par utilisateur)
+│       ├── query_engine.py         # Encodage requete, recherche, formatage du contexte
+│       └── callbacks.py            # Affichage des sources dans Chainlit (Steps)
 │
 ├── scripts/
 │   └── create_user.py              # CLI pour creer un compte utilisateur
 │
 ├── data/
-│   ├── juria_app.db                # Base SQLite (threads, steps, users, documents)
+│   ├── juria_app.db                # Base SQLite (threads, steps, users)
+│   ├── vectorstore/                # Collections ChromaDB (gitignored)
 │   ├── raw/                        # Corpus brut telecharge (gitignored)
 │   └── user_docs/                  # Documents uploades par utilisateur
 │
@@ -56,7 +59,7 @@ jurIA/
 │   └── test_query_engine.py
 │
 ├── .chainlit/
-│   └── config.toml                 # Configuration Chainlit (UI, upload, session)
+│   └── config.toml                 # Configuration Chainlit (UI, session)
 ├── .env.example                    # Template des variables d'environnement
 ├── requirements.txt                # Dependances Python
 └── chainlit.md                     # Message d'accueil affiche dans l'UI
@@ -72,18 +75,6 @@ source .venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 ```
 
-### Dependances
-
-```
-chainlit>=2.0
-anthropic
-openai
-python-dotenv
-aiosqlite
-sqlalchemy[asyncio]
-bcrypt
-```
-
 ## Configuration
 
 Copier `.env.example` en `.env` et renseigner les valeurs :
@@ -95,6 +86,7 @@ cp .env.example .env
 | Variable | Description | Requis |
 |---|---|---|
 | `JURIA_ENV` | `dev` (Ollama local) ou `prod` (Claude API) | Non (defaut : `dev`) |
+| `JURIA_PETITE_CONFIG` | `true` pour forcer Claude meme en dev (si API key presente) | Non (defaut : `false`) |
 | `ANTHROPIC_API_KEY` | Cle API Anthropic | Oui en prod |
 | `CHAINLIT_AUTH_SECRET` | Secret pour les sessions Chainlit | Oui en prod |
 | `OLLAMA_MODEL` | Modele Ollama a utiliser | Non (defaut : `mistral`) |
@@ -126,46 +118,46 @@ python scripts/create_user.py --username alice --password motdepasse --display-n
 
 ## Architecture
 
-### Chat (`juria/chat.py`)
+### Chat et tool calling (`juria/chat.py`)
 
 Le module selectionne le backend LLM selon `JURIA_ENV` :
 - **Dev** : `AsyncOpenAI` pointe sur Ollama (`http://localhost:11434/v1`), modele configurable.
-- **Prod** : `AsyncAnthropic` avec Claude claude-sonnet-4-6.
+- **Prod / petite config** : `AsyncAnthropic` avec Claude claude-sonnet-4-6.
 
-Les reponses sont streamees token par token vers l'interface Chainlit.
+Le LLM dispose d'outils de recherche declares en tool calling. Quand il decide d'interroger la base, un `cl.Step` s'affiche comme encart collapsable rattache au message de reponse, montrant la requete et les sources trouvees.
+
+### RAG (`juria/rag/`)
+
+- **vector_store.py** : interface ChromaDB avec une collection principale (corpus juridique) et des collections par utilisateur (documents uploades).
+- **query_engine.py** : encode la requete avec Solon, interroge ChromaDB, filtre par seuil de distance cosinus (0.3), formate le contexte pour le prompt LLM.
+- **callbacks.py** : affiche les sources consultees dans un Step Chainlit collapsable.
+
+### Ingestion (`juria/ingestion/`)
+
+- **chunking.py** : decoupage hierarchique des textes de loi en chunks avec metadonnees (source, chapitre, section, article).
+- **build_index.py** : script d'indexation qui encode les chunks et les insere dans ChromaDB.
 
 ### Authentification (`juria/auth.py`)
 
-- **Mode dev** (`JURIA_ENV=dev`) : un `header_auth_callback` retourne automatiquement un utilisateur `dev`, sans ecran de login. Les conversations sont persistees et visibles dans l'historique.
+- **Mode dev** (`JURIA_ENV=dev`) : un `header_auth_callback` retourne automatiquement un utilisateur `dev`, sans ecran de login.
 - **Mode prod** : `password_auth_callback` avec verification bcrypt contre la table `users` en SQLite.
 
 ### Persistance (`app.py`)
 
-Le `SQLAlchemyDataLayer` de Chainlit est configure avec SQLite (`data/juria_app.db`). Les tables (`users`, `threads`, `steps`, `elements`, `feedbacks`) sont creees automatiquement au demarrage si elles n'existent pas.
-
-### Upload de documents (`juria/user_docs.py`)
-
-Les fichiers PDF, TXT et Markdown envoyes dans le chat sont :
-1. Copies dans `data/user_docs/<user_id>/`
-2. Enregistres dans la table `user_documents` (metadonnees)
-
-L'indexation pour la recherche RAG n'est pas encore implementee.
-
-### System prompt (`juria/prompts.py`)
-
-jurIA se presente comme un assistant juridique pedagogique : il cite les articles de loi, signale ses incertitudes, et rappelle qu'il ne remplace pas un avocat.
+Le `SQLAlchemyDataLayer` de Chainlit est configure avec SQLite (`data/juria_app.db`). Les tables (`users`, `threads`, `steps`, `elements`, `feedbacks`) sont creees automatiquement au demarrage.
 
 ## Statut du projet
 
 - [x] Interface conversationnelle Chainlit
 - [x] Streaming des reponses (Claude + Ollama)
+- [x] Tool calling (Anthropic + OpenAI/Ollama)
+- [x] RAG : base vectorielle ChromaDB + embeddings Solon
+- [x] Recherche dans la base documentaire avec affichage des sources
 - [x] Authentification par mot de passe (prod) / auto-login (dev)
 - [x] Persistance de l'historique des conversations (SQLite)
 - [x] Reprise de conversation depuis la sidebar
-- [x] Upload et stockage de documents utilisateur
+- [x] Pipeline d'ingestion et chunking hierarchique
 - [x] Starters pre-configures
-- [ ] Pipeline d'ingestion Legifrance (API PISTE)
-- [ ] Chunking hierarchique des textes de loi
-- [ ] Indexation vectorielle et recherche RAG
+- [ ] Interrogation temps reel de l'API Legifrance (fallback quand la base locale ne suffit pas)
 - [ ] Deploiement (Railway / Render)
 - [ ] CI/CD (GitHub Actions)

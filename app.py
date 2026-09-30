@@ -7,7 +7,6 @@ from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 
 from juria.auth import is_dev_mode, get_user_db, verify_password
 from juria.chat import stream_response
-from juria.user_docs import handle_upload
 
 load_dotenv()
 
@@ -197,17 +196,6 @@ async def on_chat_resume(thread):
 
 @cl.on_message
 async def main(message: cl.Message):
-    # Handle file uploads
-    if message.elements:
-        user = cl.user_session.get("user")
-        user_id = user.identifier if user else "anonymous"
-        confirmations = await handle_upload(message.elements, user_id)
-        if confirmations:
-            await cl.Message(content="\n".join(confirmations)).send()
-        # If the message only contains files with no text, stop here
-        if not message.content.strip():
-            return
-
     history = cl.user_session.get("history")
     history.append({"role": "user", "content": message.content})
 
