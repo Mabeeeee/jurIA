@@ -49,47 +49,70 @@ else:
 # Tool execution
 # ---------------------------------------------------------------------------
 
-async def _executer_outil(nom: str, arguments: dict, parent_msg: cl.Message) -> str:
-    """Execute un outil RAG et affiche un Step Chainlit rattache au message reponse."""
+def _citer(texte: str, max_len: int = 60) -> str:
+    """Mots-cles entre guillemets pour le libelle d'un Step, tronques si besoin."""
+    texte = " ".join(str(texte).split())
+    if len(texte) > max_len:
+        texte = texte[: max_len - 1] + "…"
+    return f"« {texte} »"
+
+
+async def _executer_outil(nom: str, arguments: dict) -> str:
+    """Execute un outil RAG et l'affiche dans un Step Chainlit repliable.
+
+    Pendant l'execution, le libelle (« Recherche ... : <mots-cles> ») est anime
+    par public/juria.css ; une fois termine, il resume le resultat et se deplie
+    sur le detail. Les appels ChromaDB sont synchrones : on les passe par
+    cl.make_async pour ne pas bloquer la boucle (sinon l'animation ne
+    s'affiche pas).
+    """
     from juria.rag.query_engine import rechercher, rechercher_docs_utilisateur, formater_contexte
-    from juria.rag.callbacks import afficher_sources
+    from juria.rag.callbacks import formater_sources
     from juria.ingestion.legifrance_client import get_legifrance_client
     from juria.ingestion.legifrance_sync import synchroniser_article
 
     if nom == "rechercher_base_documentaire":
         requete = arguments.get("requete", "")
         domaine = arguments.get("domaine")
-        async with cl.Step(name="Recherche documentaire", type="tool") as step:
-            step.input = requete
-            step.parent_id = parent_msg.id
-            resultats = rechercher(requete, domaine=domaine)
-            contexte = formater_contexte(resultats)
-            step.output = f"{len(resultats)} resultat(s) trouve(s)"
-        await afficher_sources(resultats, parent_msg)
-        return contexte
+        async with cl.Step(
+            name=f"Recherche dans la base documentaire : {_citer(requete)}",
+            type="tool", icon="library", show_input=False,
+        ) as step:
+            resultats = await cl.make_async(rechercher)(requete, domaine=domaine)
+            step.name = f"Base documentaire : {len(resultats)} source(s) pour {_citer(requete)}"
+            step.output = formater_sources(resultats)
+        return formater_contexte(resultats)
 
     if nom == "rechercher_mes_cours":
         requete = arguments.get("requete", "")
         user = cl.user_session.get("user")
         user_id = user.identifier if user else "anonymous"
-        async with cl.Step(name="Recherche dans vos documents", type="tool") as step:
-            step.input = requete
-            step.parent_id = parent_msg.id
-            resultats = rechercher_docs_utilisateur(requete, user_id)
-            contexte = formater_contexte(resultats)
-            step.output = f"{len(resultats)} resultat(s) trouve(s)"
-        await afficher_sources(resultats, parent_msg)
-        return contexte
+        async with cl.Step(
+            name=f"Recherche dans vos documents : {_citer(requete)}",
+            type="tool", icon="file-text", show_input=False,
+        ) as step:
+            resultats = await cl.make_async(rechercher_docs_utilisateur)(requete, user_id)
+            step.name = f"Vos documents : {len(resultats)} passage(s) pour {_citer(requete)}"
+            step.output = formater_sources(resultats)
+        return formater_contexte(resultats)
 
     if nom == "search_legifrance":
         mots_cles = arguments.get("mots_cles", "")
         nom_code = arguments.get("nom_code")
-        async with cl.Step(name="Recherche Legifrance", type="tool") as step:
-            step.input = mots_cles
-            step.parent_id = parent_msg.id
+        cible = f" ({nom_code})" if nom_code else ""
+        async with cl.Step(
+            name=f"Recherche Légifrance{cible} : {_citer(mots_cles)}",
+            type="tool", icon="scale", show_input=False,
+        ) as step:
             client = get_legifrance_client()
             resultats = await client.search(mots_cles, nom_code=nom_code)
-            step.output = f"{len(resultats)} article(s) trouve(s)"
+            step.name = f"Légifrance : {len(resultats)} article(s) pour {_citer(mots_cles)}"
+            step.output = "\n".join(
+                f"- [{r.get('code', '')} — art. {r.get('num', '')}]"
+                f"(https://www.legifrance.gouv.fr/codes/article_lc/{r['id']})"
+                f" : {r.get('extrait', '')[:160]}"
+                for r in resultats
+            ) or "Aucun article trouvé."
 
         if resultats:
             lignes = []
@@ -103,15 +126,16 @@ async def _executer_outil(nom: str, arguments: dict, parent_msg: cl.Message) -> 
     if nom == "get_article_legifrance":
         article_id = arguments.get("article_id", "")
         nom_code = arguments.get("nom_code", "")
-        async with cl.Step(name="Article Legifrance", type="tool") as step:
-            step.input = article_id
-            step.parent_id = parent_msg.id
-
+        async with cl.Step(
+            name=f"Lecture de l'article sur Légifrance : {article_id}",
+            type="tool", icon="book-open", show_input=False,
+        ) as step:
             client = get_legifrance_client()
             article = await client.get_article(article_id)
 
             # Erreur API (500, timeout...)
             if article.get("erreur"):
+                step.name = f"Article {article_id} indisponible sur Légifrance"
                 step.output = f"Erreur API : {article['erreur']}"
                 return f"Erreur lors de la recuperation de l'article {article_id} : {article['erreur']}"
 
@@ -121,12 +145,14 @@ async def _executer_outil(nom: str, arguments: dict, parent_msg: cl.Message) -> 
             url = article.get("url", "")
 
             # Synchroniser dans ChromaDB
-            statut_sync = synchroniser_article(
+            statut_sync = await cl.make_async(synchroniser_article)(
                 article_id, texte, etat,
                 meta={"code": nom_code, "num": num, "url": url},
             )
 
-            step.output = f"Art. {num} — etat: {etat} — sync: {statut_sync}"
+            libelle_etat = "en vigueur" if etat == "VIGUEUR" else etat.lower().replace("_", " ")
+            step.name = f"Article {num}" + (f" du {nom_code}" if nom_code else "") + f" ({libelle_etat})"
+            step.output = f"[Voir sur Légifrance]({url}) — synchronisation : {statut_sync}\n\n> {texte}"
 
         parties = [
             f"Article {num}" + (f" ({nom_code})" if nom_code else ""),
@@ -179,7 +205,7 @@ async def _stream_anthropic(history: list[dict], msg: cl.Message) -> str:
                     full_response += block.text
 
             await msg.stream_token(full_response)
-            await msg.update()
+            await msg.send()
             return full_response
 
         # Construire le message assistant avec tous les blocs
@@ -200,7 +226,7 @@ async def _stream_anthropic(history: list[dict], msg: cl.Message) -> str:
         # Executer chaque outil et collecter les resultats
         tool_results = []
         for tool_block in tool_use_blocks:
-            resultat = await _executer_outil(tool_block.name, tool_block.input, msg)
+            resultat = await _executer_outil(tool_block.name, tool_block.input)
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": tool_block.id,
@@ -243,9 +269,7 @@ async def _stream_ollama(history: list[dict], msg: cl.Message) -> str:
 
             for tool_call in choice.message.tool_calls:
                 arguments = json.loads(tool_call.function.arguments)
-                resultat = await _executer_outil(
-                    tool_call.function.name, arguments, msg
-                )
+                resultat = await _executer_outil(tool_call.function.name, arguments)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
@@ -256,7 +280,7 @@ async def _stream_ollama(history: list[dict], msg: cl.Message) -> str:
         # Pas de tool call -> reponse finale
         full_response = choice.message.content or ""
         await msg.stream_token(full_response)
-        await msg.update()
+        await msg.send()
         return full_response
 
 

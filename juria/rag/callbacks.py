@@ -1,15 +1,13 @@
 """Affichage des sources dans Chainlit."""
 
-import chainlit as cl
-
 from juria.rag.query_engine import ResultatRecherche
 
 
-async def afficher_sources(resultats: list[ResultatRecherche], parent_msg: cl.Message):
-    """Cree un Step Chainlit collapsable listant les sources consultees,
-    rattache au message de reponse."""
+def formater_sources(resultats: list[ResultatRecherche]) -> str:
+    """Liste markdown des sources consultees, affichee dans le Step repliable
+    de la recherche."""
     if not resultats:
-        return
+        return "Aucune source trouvee."
 
     lignes = []
     for i, r in enumerate(resultats, 1):
@@ -44,8 +42,4 @@ async def afficher_sources(resultats: list[ResultatRecherche], parent_msg: cl.Me
             reference = " - ".join(ref_parts) if ref_parts else "Source inconnue"
             lignes.append(f"- **[{i}]** {reference} (pertinence: {score_pct}%)")
 
-    contenu = "\n".join(lignes)
-
-    async with cl.Step(name="Sources consultees", type="tool") as step:
-        step.parent_id = parent_msg.id
-        step.output = contenu
+    return "\n".join(lignes)

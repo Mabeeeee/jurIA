@@ -1,0 +1,72 @@
+/*
+ * jurIA — Steps de recherche (base documentaire, vos documents, Légifrance)
+ * facon « Recherche de … › » : icone animee pendant la recherche, libelle
+ * sans le prefixe « Utilise / Utilisé » de Chainlit, chevron › repliable.
+ *
+ * Cible le DOM de Chainlit 2.11 (Messages/Message/Step.tsx) :
+ *   .step[data-step-type="tool"]
+ *     .ai-message > span (icone, via cl.Step(icon=...))
+ *     button|p[id^="step-"] (libelle) > span (prefixe traduit) + nom + svg chevron
+ *   .loading-shimmer est pose sur le libelle tant que le Step tourne.
+ */
+
+.step[data-step-type="tool"] {
+  padding-block: 0.125rem;
+}
+
+.step[data-step-type="tool"] div[id^="step-"].pb-2 {
+  padding-bottom: 0.25rem;
+}
+
+/* Prefixe « Utilise » / « Utilisé » : le nom du Step porte deja l'action */
+.step[data-step-type="tool"] button[id^="step-"] > span:first-child,
+.step[data-step-type="tool"] p[id^="step-"] > span:first-child {
+  display: none;
+}
+
+/* Libelle : plus discret qu'un titre */
+.step[data-step-type="tool"] button[id^="step-"],
+.step[data-step-type="tool"] p[id^="step-"] {
+  font-weight: 400;
+  font-size: 0.925rem;
+}
+
+/* Chevron › qui pivote vers le bas a l'ouverture */
+.step[data-step-type="tool"] button[id^="step-"] > svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  margin-left: 0.125rem;
+  transform: rotate(-90deg);
+}
+.step[data-step-type="tool"] button[id^="step-"][data-state="open"] > svg {
+  transform: rotate(0deg);
+}
+
+/* Detail deplie : filet neutre plutot que la couleur primaire */
+.step[data-step-type="tool"] .border-primary {
+  border-color: hsl(var(--border));
+}
+
+/* Icone du Step : estompee une fois terminee, animee pendant la recherche */
+.step[data-step-type="tool"] .ai-message > span:first-child svg {
+  color: hsl(var(--muted-foreground));
+  transition: color 0.3s ease;
+}
+
+.step[data-step-type="tool"]:has(.loading-shimmer) .ai-message > span:first-child svg {
+  color: hsl(var(--primary));
+  animation: juria-recherche 1.4s ease-in-out infinite;
+}
+
+@keyframes juria-recherche {
+  0%, 100% { transform: scale(1) rotate(0deg);    opacity: 1; }
+  25%      { transform: scale(1.15) rotate(-8deg); opacity: 0.75; }
+  50%      { transform: scale(0.9) rotate(0deg);   opacity: 0.5; }
+  75%      { transform: scale(1.15) rotate(8deg);  opacity: 0.75; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step[data-step-type="tool"]:has(.loading-shimmer) .ai-message > span:first-child svg {
+    animation: none;
+  }
+}

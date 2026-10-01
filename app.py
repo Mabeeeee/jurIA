@@ -199,8 +199,10 @@ async def main(message: cl.Message):
     history = cl.user_session.get("history")
     history.append({"role": "user", "content": message.content})
 
+    # Le message n'est envoye qu'avec la reponse finale (cf. juria/chat.py) :
+    # les Steps de recherche s'affichent ainsi au-dessus de la reponse, et
+    # Chainlit montre son curseur d'attente tant que le modele reflechit.
     msg = cl.Message(content="")
-    await msg.send()
 
     full_response = await stream_response(history, msg)
 

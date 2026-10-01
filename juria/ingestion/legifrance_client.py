@@ -49,6 +49,9 @@ def formater_contexte_legifrance(resultats: list[ResultatLegifrance]) -> str:
 _DEFAULT_OAUTH_URL = "https://sandbox-oauth.piste.gouv.fr/api/oauth/token"
 _DEFAULT_API_BASE = "https://sandbox-api.piste.gouv.fr/dila/legifrance/lf-engine-app"
 
+# Nombre max d'articles renvoyes au LLM par une recherche
+_MAX_ARTICLES_SEARCH = 10
+
 
 # ---------------------------------------------------------------------------
 # LegifranceClient
@@ -164,9 +167,11 @@ class LegifranceClient:
         type_recherche: str,
         nom_code: str | None,
     ) -> list[dict]:
-        filtres = [{"facette": "DATE_VERSION", "valeur": "VIGUEUR"}]
+        # DATE_VERSION attend un timestamp en ms (version en vigueur a cette
+        # date). Une valeur texte ("VIGUEUR") fait repondre l'API en 500.
+        filtres = [{"facette": "DATE_VERSION", "singleDate": int(time.time() * 1000)}]
         if nom_code:
-            filtres.append({"facette": "NOM_CODE", "valeur": nom_code})
+            filtres.append({"facette": "NOM_CODE", "valeurs": [nom_code]})
 
         body = {
             "recherche": {
@@ -197,28 +202,29 @@ class LegifranceClient:
 
     @staticmethod
     def _parse_search_results(data: dict) -> list[dict]:
+        """Chaque resultat est un code ; les articles correspondants sont dans
+        sections[].extracts[] (id LEGIARTI..., num, values = extraits surlignes)."""
+
+        def _nettoyer(texte: str | None) -> str:
+            return re.sub(r"</?mark>", "", texte or "").strip()
+
         resultats = []
         for item in data.get("results", []):
-            article_id = item.get("id", "")
-            titles = item.get("titles", [])
-            code = titles[0].get("title", "") if titles else ""
-            num = item.get("num", "")
-
-            extrait = ""
-            sections = item.get("sections", [])
-            if sections:
-                extracts = sections[0].get("extracts", [])
-                if extracts:
-                    extrait = extracts[0].get("text", "")
-            if not extrait:
-                extrait = item.get("text", "")
-
-            resultats.append({
-                "id": article_id,
-                "code": code,
-                "num": num,
-                "extrait": extrait,
-            })
+            titles = item.get("titles") or []
+            code = _nettoyer(titles[0].get("title")) if titles else ""
+            for section in item.get("sections") or []:
+                for extract in section.get("extracts") or []:
+                    if not extract.get("id"):
+                        continue
+                    values = extract.get("values") or []
+                    resultats.append({
+                        "id": extract["id"],
+                        "code": code,
+                        "num": extract.get("num") or extract.get("title") or "",
+                        "extrait": _nettoyer(values[0] if values else ""),
+                    })
+                    if len(resultats) >= _MAX_ARTICLES_SEARCH:
+                        return resultats
         return resultats
 
     # --- Consultation d'article ---
