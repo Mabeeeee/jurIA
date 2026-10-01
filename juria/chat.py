@@ -35,7 +35,7 @@ _use_anthropic = (not is_dev_mode()) or (
 
 if _use_anthropic:
     _anthropic_client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-    _anthropic_model = "claude-sonnet-4-6" if is_dev_mode() else "claude-sonnet-4-6" #claude-haiku-4-5-20251001
+    _anthropic_model = "claude-sonnet-5-5" if is_dev_mode() else "claude-sonnet-5-5" #claude-haiku-4-5-20251001
 else:
     _ollama_client = AsyncOpenAI(
         base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
