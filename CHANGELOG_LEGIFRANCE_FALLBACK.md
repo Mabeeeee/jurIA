@@ -20,7 +20,7 @@ Reecrit complet. L'ancien module (fonctions libres, `httpx.AsyncClient` ephemere
 - **httpx.AsyncClient** : singleton lazy, recree si ferme (`is_closed`).
 - **Retry 401** : un seul retry (invalidation du token puis nouvel appel).
 - **`search(mots_cles, nom_code=None)`** :
-  - Fond `CODE_DATE`, filtres `DATE_VERSION=VIGUEUR` + `NOM_CODE` optionnel.
+  - Fond `CODE_DATE`, filtres `DATE_VERSION` (`singleDate` = aujourd'hui) + `NOM_CODE` optionnel.
   - Essaie `TOUS_LES_MOTS_DANS_UN_CHAMP`, puis fallback `UN_DES_MOTS` si zero resultats.
   - `pageSize=8`, retourne `list[dict]` avec cles `{id, code, num, extrait}`.
 - **`get_article(article_id)`** :
@@ -155,14 +155,15 @@ Etudiant: "Quel est le delai de restitution du depot de garantie ?"
 
 ## Tests effectues (2026-10-01 — sandbox PISTE)
 
-### Endpoint `/search` — KO (sandbox instable)
+### Endpoint `/search` — KO puis corrige
 
-L'endpoint `/search` de la sandbox PISTE renvoie systématiquement **500 Internal Server Error**. Le `/ping` aussi. C'est un probleme cote DILA, pas cote jurIA. Le code gere cette erreur proprement :
-- `httpx.HTTPStatusError` est attrape dans `search()`
-- Un warning est logue (`juria.ingestion.legifrance_client`)
-- Le LLM recoit "Aucun article trouve" et continue sa reponse sans crash
+Premier constat : `/search` renvoyait systematiquement **500 Internal Server Error**, attribue a tort a une instabilite de la sandbox.
 
-Le LLM respecte bien la strategie du prompt (3 tentatives max avec mots-cles differents avant d'abandonner).
+**Cause reelle (corrigee le 2026-10-01)** : le corps de la requete etait invalide. Le filtre `{"facette": "DATE_VERSION", "valeur": "VIGUEUR"}` attend un timestamp ; l'API PISTE repond 500 (et non 400) sur un body mal forme. Correctifs dans `legifrance_client.py` :
+- `DATE_VERSION` envoye avec `singleDate` (timestamp ms du jour) ; `NOM_CODE` avec `valeurs: [...]`.
+- `_parse_search_results()` reecrit : chaque resultat est un code, les articles sont dans `sections[].extracts[]` (id `LEGIARTI...`, `num`, `values`). Balises `<mark>` retirees, 10 articles max.
+
+Verifie sur la sandbox : « responsabilite fait des choses » (Code civil) → art. 1242 ; « contrat de travail » → 10 articles du Code du travail ; recherche sans resultat → liste vide sans erreur. La gestion d'erreur (warning logue, le LLM continue sans crash) reste en place.
 
 ### Endpoint `/consult/getArticle` — OK
 
@@ -177,9 +178,9 @@ Test avec l'article 1240 du Code civil (`LEGIARTI000032041571`) :
 
 Le pipeline `getArticle` → sync ChromaDB → re-verification est **fonctionnel**.
 
-### Pour tester le pipeline complet
+### Passage en production PISTE
 
-Quand `/search` sera retabli (passage en prod PISTE ou retablissement de la sandbox), le pipeline complet fonctionnera sans changement de code. Il suffira de mettre a jour les URLs dans `.env` si passage en prod :
+Le pipeline complet fonctionne sur la sandbox. Pour passer en prod, il suffit de mettre a jour les URLs dans `.env` :
 
 ```
 PISTE_OAUTH_URL=https://oauth.piste.gouv.fr/api/oauth/token
