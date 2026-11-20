@@ -2,7 +2,7 @@ import hashlib
 import os
 import shutil
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 
 import chainlit as cl
 from chainlit.element import Element
@@ -68,7 +68,7 @@ async def handle_upload(elements: list[Element], user_id: str) -> list[str]:
             continue
 
         # Record metadata in SQLite
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         conn = sqlite3.connect(DB_PATH)
         conn.execute(
             "INSERT INTO user_documents (user_id, filename, mime_type, stored_path, uploaded_at) "
