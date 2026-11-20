@@ -9,6 +9,7 @@ __pycache__/
 .venv/
 prompt_history_*
 .claude/
+.DS_Store
 # Documentation des tests (generee localement)
 docs/tests/
 
