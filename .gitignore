@@ -9,3 +9,9 @@ __pycache__/
 .venv/
 prompt_history_*
 .claude/
+# Documentation des tests (generee localement)
+docs/tests/
+
+# Couverture de tests (pytest-cov)
+.coverage
+htmlcov/

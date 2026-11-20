@@ -257,7 +257,7 @@ Les deux backends partagent la meme boucle : appel non streame pour detecter les
 ### Authentification (`juria/auth.py`)
 
 - **Mode dev** (`JURIA_ENV=dev`) : un `header_auth_callback` retourne automatiquement un utilisateur `dev`, sans ecran de login.
-- **Mode prod** : `password_auth_callback` avec verification bcrypt contre la table `users` en SQLite.
+- **Mode prod** : `password_auth_callback` avec verification bcrypt contre la table `juria_users` en SQLite (distincte de la table `users` geree par Chainlit dans la meme base). Les comptes d'une ancienne table `users` au schema jurIA sont repris automatiquement.
 
 ### Persistance (`app.py`)
 
@@ -278,7 +278,11 @@ Le `SQLAlchemyDataLayer` de Chainlit est configure avec SQLite (`data/juria_app.
 - [x] Pipeline d'ingestion et chunking hierarchique
 - [x] Starters pre-configures
 - [ ] Upload de documents dans le chat : `handle_upload` (`juria/user_docs.py`) existe mais n'est pas encore appele depuis `on_message`
-- [ ] Tests unitaires (`tests/` contient des fichiers vides)
+- [x] Tests unitaires (pytest, `python -m pytest` ; dependances dans `requirements-dev.txt`)
+- [x] Correctif : conflit de la table `users` entre Chainlit et l'authentification (comptes desormais dans `juria_users`)
+- [ ] Bug : un identifiant utilisateur contenant `@`, un espace ou un accent fait planter la collection ChromaDB `store_quizz_<username>` (noms limites a `[a-zA-Z0-9._-]`) — deriver le nom d'un slug ou d'un hash (test `xfail` dans `tests/test_vector_store.py`)
+- [ ] Bug : `_chunker_par_taille` rattache mal une page longue a ses derniers chunks (numeros de page incomplets dans les citations) — memoriser la position de fin de chaque page (test `xfail` dans `tests/test_chunking.py`)
+- [ ] Remplacer `datetime.utcnow()` (deprecie depuis Python 3.12) par `datetime.now(timezone.utc)` dans `juria/user_docs.py`
 - [ ] Passage de la sandbox PISTE a la production
 - [ ] Deploiement (Railway / Render)
 - [ ] CI/CD (GitHub Actions : `ci.yml` et `deploy.yml` sont vides)

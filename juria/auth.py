@@ -7,6 +7,10 @@ import bcrypt
 
 DB_PATH = os.path.join("data", "juria_app.db")
 
+# Table distincte de la table `users` creee par Chainlit (app.py) dans la
+# meme base : les deux schemas sont incompatibles.
+USERS_TABLE = "juria_users"
+
 
 def is_dev_mode() -> bool:
     return os.getenv("JURIA_ENV", "dev").lower() == "dev"
@@ -31,14 +35,22 @@ def _ensure_users_table():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS users (
+        f"""
+        CREATE TABLE IF NOT EXISTS {USERS_TABLE} (
             username TEXT PRIMARY KEY,
             password_hash TEXT NOT NULL,
             display_name TEXT NOT NULL
         )
         """
     )
+    # Reprise des comptes crees dans l'ancienne table `users` (schema jurIA),
+    # sans la supprimer : elle peut etre celle attendue par Chainlit.
+    colonnes = {ligne[1] for ligne in conn.execute("PRAGMA table_info(users)")}
+    if {"username", "password_hash", "display_name"} <= colonnes:
+        conn.execute(
+            f"INSERT OR IGNORE INTO {USERS_TABLE} (username, password_hash, display_name) "
+            "SELECT username, password_hash, display_name FROM users"
+        )
     conn.commit()
     conn.close()
 
@@ -47,7 +59,7 @@ def get_user_db(username: str) -> Optional[dict]:
     _ensure_users_table()
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute(
-        "SELECT username, password_hash, display_name FROM users WHERE username = ?",
+        f"SELECT username, password_hash, display_name FROM {USERS_TABLE} WHERE username = ?",
         (username,),
     ).fetchone()
     conn.close()
@@ -60,7 +72,7 @@ def create_user_db(username: str, password: str, display_name: str):
     _ensure_users_table()
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
-        "INSERT INTO users (username, password_hash, display_name) VALUES (?, ?, ?)",
+        f"INSERT INTO {USERS_TABLE} (username, password_hash, display_name) VALUES (?, ?, ?)",
         (username, hash_password(password), display_name),
     )
     conn.commit()
