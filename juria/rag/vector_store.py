@@ -3,6 +3,7 @@
 import chromadb
 from chromadb.config import Settings
 
+from juria.auth import valider_username
 from juria.config import VECTORSTORE_DIR
 
 COLLECTION_NAME = "juria_documents"
@@ -78,6 +79,18 @@ def get_vector_store() -> VectorStore:
 
 _user_stores: dict[str, "UserVectorStore"] = {}
 
+USER_COLLECTION_PREFIX = "store_quizz_"
+
+
+def nom_collection_utilisateur(username: str) -> str:
+    """Nom de la collection ChromaDB d'un utilisateur.
+
+    Seul endroit ou ce nom est construit : pour accepter un jour des
+    identifiants libres (e-mail via OAuth...), remplacer le username par un
+    hash ici suffira.
+    """
+    return f"{USER_COLLECTION_PREFIX}{valider_username(username)}"
+
 
 class UserVectorStore:
     """Collection ChromaDB dediee aux documents uploades par un utilisateur."""
@@ -89,7 +102,7 @@ class UserVectorStore:
             settings=Settings(anonymized_telemetry=False),
         )
         self.collection = self.client.get_or_create_collection(
-            name=f"store_quizz_{username}",
+            name=nom_collection_utilisateur(username),
             metadata={"hnsw:space": "cosine"},
         )
 

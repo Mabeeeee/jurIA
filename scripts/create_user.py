@@ -12,7 +12,7 @@ import os
 # Allow running from repo root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from juria.auth import create_user_db, get_user_db
+from juria.auth import create_user_db, get_user_db, valider_username
 
 
 def main():
@@ -23,6 +23,12 @@ def main():
     args = parser.parse_args()
 
     display_name = args.display_name or args.username
+
+    try:
+        valider_username(args.username)
+    except ValueError as e:
+        print(f"Erreur : {e}")
+        sys.exit(1)
 
     if get_user_db(args.username):
         print(f"Erreur : l'utilisateur '{args.username}' existe deja.")

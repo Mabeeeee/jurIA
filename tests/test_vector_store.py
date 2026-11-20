@@ -12,6 +12,7 @@ from juria.rag.vector_store import (
     VectorStore,
     get_user_vector_store,
     get_vector_store,
+    nom_collection_utilisateur,
 )
 
 pytestmark = pytest.mark.chroma
@@ -110,10 +111,11 @@ class TestUserVectorStore:
         assert get_user_vector_store("alice") is get_user_vector_store("alice")
         assert get_user_vector_store("alice") is not get_user_vector_store("bob")
 
-    @pytest.mark.xfail(strict=True, reason=(
-        "Bug latent : ChromaDB n'accepte que [a-zA-Z0-9._-] dans un nom de "
-        "collection. Un identifiant utilisateur type e-mail fait planter "
-        "rechercher_mes_cours et l'upload."
-    ))
-    def test_username_avec_caracteres_speciaux(self, chroma_tmp):
-        UserVectorStore("marie@exemple.fr")
+    @pytest.mark.parametrize("username", ["marie@exemple.fr", "abc-", "../x", "é"])
+    def test_username_invalide_refuse(self, chroma_tmp, username):
+        # ChromaDB n'accepte que [a-zA-Z0-9._-] : on refuse avant de l'appeler
+        with pytest.raises(ValueError, match="Identifiant invalide"):
+            UserVectorStore(username)
+
+    def test_nom_collection_utilisateur(self):
+        assert nom_collection_utilisateur("marie_dupont-2") == "store_quizz_marie_dupont-2"

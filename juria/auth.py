@@ -1,4 +1,5 @@
 import os
+import re
 import sqlite3
 from typing import Optional
 
@@ -10,6 +11,23 @@ DB_PATH = os.path.join("data", "juria_app.db")
 # Table distincte de la table `users` creee par Chainlit (app.py) dans la
 # meme base : les deux schemas sont incompatibles.
 USERS_TABLE = "juria_users"
+
+# L'identifiant sert de nom de collection ChromaDB (`store_quizz_<username>`) et
+# de dossier d'upload (`data/user_docs/<username>`). ChromaDB n'accepte que
+# [a-zA-Z0-9._-] et impose un nom qui finit par une lettre ou un chiffre : on
+# autorise lettres, chiffres, `_` et `-` (pas de point, pour exclure `..`),
+# 32 caracteres max, sans `_` ni `-` en debut ou fin.
+USERNAME_PATTERN = re.compile(r"[a-zA-Z0-9](?:[a-zA-Z0-9_-]{0,30}[a-zA-Z0-9])?")
+
+
+def valider_username(username: str) -> str:
+    """Retourne le username s'il est valide, leve ValueError sinon."""
+    if not isinstance(username, str) or not USERNAME_PATTERN.fullmatch(username):
+        raise ValueError(
+            f"Identifiant invalide : {username!r}. Autorises : lettres sans accent, "
+            "chiffres, '_' et '-' (32 caracteres max, ni '_' ni '-' en debut ou fin)."
+        )
+    return username
 
 
 def is_dev_mode() -> bool:
@@ -69,6 +87,7 @@ def get_user_db(username: str) -> Optional[dict]:
 
 
 def create_user_db(username: str, password: str, display_name: str):
+    valider_username(username)
     _ensure_users_table()
     conn = sqlite3.connect(DB_PATH)
     conn.execute(

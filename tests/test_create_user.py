@@ -47,3 +47,12 @@ def test_utilisateur_existant(create_user, db_tmp, monkeypatch, capsys):
     assert exc.value.code == 1
     assert "existe deja" in capsys.readouterr().out
     assert auth.verify_password("pw", auth.get_user_db("alice")["password_hash"])
+
+
+def test_username_invalide(create_user, db_tmp, monkeypatch, capsys):
+    with pytest.raises(SystemExit) as exc:
+        _lancer(create_user, monkeypatch, "--username", "marie@exemple.fr", "--password", "pw")
+
+    assert exc.value.code == 1
+    assert "Identifiant invalide" in capsys.readouterr().out
+    assert auth.get_user_db("marie@exemple.fr") is None
