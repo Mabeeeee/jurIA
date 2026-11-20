@@ -254,11 +254,6 @@ class TestChunkerParTaille:
         assert chunks[0].metadata["pages"] == "1,2"  # "aaaaaaa\nbb"
         assert chunks[-1].metadata["pages"] == "2"
 
-    @pytest.mark.xfail(strict=True, reason=(
-        "Bug connu : le calcul des pages suppose qu'une page fait au plus "
-        "CHUNK_SIZE caracteres. Une page longue n'est plus rattachee aux chunks "
-        "de sa fin."
-    ))
     def test_page_longue_rattachee_a_tous_ses_chunks(self, petits_chunks):
         pages = [_page(1, ("x" * 40, 10)), _page(2, ("y" * 5, 10))]
 
@@ -267,6 +262,18 @@ class TestChunkerParTaille:
         # Le chunk qui chevauche la fin de la page 1 et le debut de la page 2
         chevauchant = next(c for c in chunks if "x" in c.texte and "y" in c.texte)
         assert chevauchant.metadata["pages"] == "1,2"
+
+    def test_pages_exactes_avec_pages_longues(self, petits_chunks):
+        # Pages de 30 caracteres (> CHUNK_SIZE = 10) : chaque chunk doit citer
+        # exactement les pages dont il contient du texte (avant le correctif,
+        # les chunks au milieu d'une page etaient etiquetes "page 1").
+        pages = [_page(n, (str(n) * 29, 10)) for n in range(1, 6)]
+
+        chunks = _chunker_par_taille(pages, "s", "")
+
+        for c in chunks:
+            pages_reelles = sorted(set(c.texte) - {"\n"})
+            assert c.metadata["pages"] == ",".join(pages_reelles), c.texte
 
 
 # ---------------------------------------------------------------------------

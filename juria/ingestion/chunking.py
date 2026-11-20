@@ -205,13 +205,16 @@ def _chunker_par_taille(pages: list[dict], source: str, domaine: str) -> list[Ch
     """Fallback : decoupage par taille fixe avec overlap."""
     # Concatener tout le texte avec marqueurs de page
     texte_complet = ""
-    positions_pages = []  # (position_debut, num_page)
+    positions_pages = []  # (position_debut, position_fin, num_page)
 
     for page_info in pages:
-        pos = len(texte_complet)
-        positions_pages.append((pos, page_info["page"]))
+        debut_page = len(texte_complet)
         for bloc in page_info["blocs"]:
             texte_complet += bloc["texte"] + "\n"
+        # Le "\n" final n'appartient pas au contenu de la page : sans cela, un
+        # chunk commencant juste dessus serait attribue a la page precedente.
+        fin_page = max(debut_page, len(texte_complet) - 1)
+        positions_pages.append((debut_page, fin_page, page_info["page"]))
 
     chunks = []
     debut = 0
@@ -225,14 +228,13 @@ def _chunker_par_taille(pages: list[dict], source: str, domaine: str) -> list[Ch
             debut = fin - CHUNK_OVERLAP
             continue
 
-        # Trouver les pages couvertes par ce chunk
-        pages_chunk = set()
-        for pos, num_page in positions_pages:
-            if pos < fin and (pos + CHUNK_SIZE > debut or pos >= debut):
-                pages_chunk.add(num_page)
-
-        if not pages_chunk:
-            pages_chunk = {1}
+        # Pages couvertes : celles dont l'intervalle [debut_page, fin_page)
+        # chevauche celui du chunk [debut, fin), quelle que soit leur longueur
+        pages_chunk = {
+            num_page
+            for debut_page, fin_page, num_page in positions_pages
+            if debut_page < fin and fin_page > debut
+        }
 
         chunks.append(Chunk(
             texte=texte_chunk.strip(),

@@ -99,6 +99,26 @@ class TestUtilisateurs:
         with pytest.raises(sqlite3.IntegrityError):
             auth.create_user_db("alice", "b", "Alice bis")
 
+    @pytest.mark.parametrize("username", [
+        "alice", "dev", "a", "marie_dupont", "jean-pierre2", "A1", "x" * 32,
+    ])
+    def test_username_valide(self, username):
+        assert auth.valider_username(username) == username
+
+    @pytest.mark.parametrize("username", [
+        "", "marie@exemple.fr", "jean pierre", "élodie", "a.b", "..", "../x",
+        "-alice", "alice-", "_alice", "alice_", "x" * 33,
+    ])
+    def test_username_invalide(self, username):
+        with pytest.raises(ValueError, match="Identifiant invalide"):
+            auth.valider_username(username)
+
+    def test_creation_refusee_si_username_invalide(self, db_tmp):
+        with pytest.raises(ValueError):
+            auth.create_user_db("marie@exemple.fr", "pw", "Marie")
+
+        assert auth.get_user_db("marie@exemple.fr") is None
+
     def test_reprise_des_comptes_de_l_ancienne_table_users(self, db_tmp, tmp_path):
         (tmp_path / "data").mkdir()
         conn = sqlite3.connect(db_tmp)
