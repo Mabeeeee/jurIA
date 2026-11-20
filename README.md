@@ -144,15 +144,53 @@ jurIA/
 └── chainlit.md                     # Message d'accueil affiche dans l'UI
 ```
 
-## Installation
+## Environnement virtuel
+
+Le projet tourne dans un environnement virtuel Python (`.venv/`, deja ignore par git) afin d'isoler ses dependances du reste de la machine.
+
+### Version de Python
+
+Utiliser **Python 3.13**. Les versions plus recentes (3.14, 3.15) ne sont pas compatibles : `chainlit run` applique `nest_asyncio`, qui casse la detection de la boucle asyncio et provoque des erreurs `anyio NoEventLoopError` des qu'un fichier statique est servi.
+
+Installation sur macOS sans Homebrew :
+
+1. Telecharger le **macOS 64-bit universal2 installer** de la derniere version 3.13.x sur https://www.python.org/downloads/macos/
+2. Lancer le `.pkg` et garder les options par defaut.
+3. A la fin, double-cliquer sur `/Applications/Python 3.13/Install Certificates.command` (sinon les appels HTTPS vers Anthropic et Legifrance peuvent echouer sur des erreurs de certificat SSL).
+4. Verifier dans un nouveau terminal : `python3.13 --version`
+
+Si plusieurs versions de Python sont installees, appeler `python3.13` explicitement : `python3` peut pointer vers une autre version.
+
+### Creation (une seule fois)
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# .venv\Scripts\activate   # Windows
+cd jurIA
+python3.13 -m venv .venv
+source .venv/bin/activate      # Linux/Mac
+# .venv\Scripts\activate       # Windows
 
+python --version               # doit afficher 3.13.x
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
+
+### Activation (a chaque nouveau terminal)
+
+```bash
+cd jurIA
+source .venv/bin/activate      # Linux/Mac
+# .venv\Scripts\activate       # Windows
+```
+
+Le prompt affiche alors `(.venv)`. Pour verifier que c'est bien le venv qui est utilise, `which chainlit` doit pointer vers `.../jurIA/.venv/bin/chainlit`. S'il pointe vers une installation systeme (ex. `/Library/Frameworks/Python.framework/...`), le venv n'est pas actif.
+
+Pour quitter le venv : `deactivate`.
+
+Apres une modification de `requirements.txt`, relancer `pip install -r requirements.txt` avec le venv actif.
+
+## Installation
+
+Voir [Environnement virtuel](#environnement-virtuel) : une fois le venv cree et active, les dependances sont installees avec `pip install -r requirements.txt`.
 
 ## Configuration
 

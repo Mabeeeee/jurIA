@@ -9,3 +9,4 @@ __pycache__/
 .venv/
 prompt_history_*
 .claude/
+.DS_Store
