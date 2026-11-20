@@ -318,9 +318,9 @@ Le `SQLAlchemyDataLayer` de Chainlit est configure avec SQLite (`data/juria_app.
 - [ ] Upload de documents dans le chat : `handle_upload` (`juria/user_docs.py`) existe mais n'est pas encore appele depuis `on_message`
 - [x] Tests unitaires (pytest, `python -m pytest` ; dependances dans `requirements-dev.txt`)
 - [x] Correctif : conflit de la table `users` entre Chainlit et l'authentification (comptes desormais dans `juria_users`)
-- [ ] Bug : un identifiant utilisateur contenant `@`, un espace ou un accent fait planter la collection ChromaDB `store_quizz_<username>` (noms limites a `[a-zA-Z0-9._-]`) — deriver le nom d'un slug ou d'un hash (test `xfail` dans `tests/test_vector_store.py`)
-- [ ] Bug : `_chunker_par_taille` rattache mal une page longue a ses derniers chunks (numeros de page incomplets dans les citations) — memoriser la position de fin de chaque page (test `xfail` dans `tests/test_chunking.py`)
-- [ ] Remplacer `datetime.utcnow()` (deprecie depuis Python 3.12) par `datetime.now(timezone.utc)` dans `juria/user_docs.py`
+- [x] Correctif : identifiants utilisateurs limites a lettres sans accent, chiffres, `_` et `-` (32 car. max), valides a la creation (`valider_username` dans `juria/auth.py`) ; le nom de collection ChromaDB est construit dans `nom_collection_utilisateur` (`juria/rag/vector_store.py`), seul point a modifier pour passer a un hash si les identifiants deviennent libres (OAuth, e-mail)
+- [x] Correctif : `_chunker_par_taille` attribuait la page 1 aux chunks situes au milieu d'une page de plus de `CHUNK_SIZE` caracteres (fausses citations) ; les pages sont desormais calculees par chevauchement d'intervalles. Les PDF non structures indexes avant ce correctif doivent etre re-indexes
+- [x] Remplacer `datetime.utcnow()` (deprecie depuis Python 3.12) par `datetime.now(timezone.utc)` dans `juria/user_docs.py`
 - [ ] Passage de la sandbox PISTE a la production
 - [ ] Deploiement (Railway / Render)
 - [ ] CI/CD (GitHub Actions : `ci.yml` et `deploy.yml` sont vides)
